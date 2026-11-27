@@ -4,7 +4,7 @@ description: >
   prepare them for the mock (normalize, synthesize + validate examples, merge curated fixtures) into specs/.
 inputs:
   openapi-tag:
-    description: crossly-openapi release tag to build from (default: the latest release)
+    description: crossly-openapi release tag to build from; empty means the latest release
     required: false
     default: ''
   token:
