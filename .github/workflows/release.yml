@@ -1,0 +1,275 @@
+# Build and publish ghcr.io/crossly-dev/crossly-mock (linux/amd64 + linux/arm64) with SBOM and signed provenance.
+#
+# Daily: rebuild only when the latest crossly-openapi release or this repo's image sources changed. The build key
+# is sha256(openapi tag + the image sources); an image tagged src-<key> already in GHCR means nothing to do.
+# Pushes to main that touch the image sources, and dispatch, run it too.
+#
+# Order: prepare specs (provenance-verified) -> build amd64 locally -> smoke test with the full GET sweep -> only then
+# push the multi-arch image -> attest provenance + SBOM to the registry -> smoke the PUSHED image natively on amd64
+# and arm64 and verify its attestations -> GitHub Release v<openapi version>.
+name: release
+
+on:
+  schedule:
+    - cron: '47 6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - scripts/**
+      - fixtures/**
+      - package.json
+      - .github/actions/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Build and push even if this spec + source combination is already published
+        type: boolean
+        default: false
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/crossly-dev/crossly-mock
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      build: ${{ steps.key.outputs.build }}
+      key: ${{ steps.key.outputs.key }}
+      openapi-tag: ${{ steps.key.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SRC: ${{ hashFiles('Dockerfile', 'scripts/**', 'fixtures/**', 'package.json', '.github/actions/**') }}
+          FORCE: ${{ inputs.force && 'true' || 'false' }}
+        run: |
+          tag=$(gh release view -R crossly-dev/crossly-openapi --json tagName --jq .tagName)
+          key=$(printf '%s:%s' "$tag" "$SRC" | sha256sum | cut -c1-12)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          if [ "$FORCE" != "true" ] && docker buildx imagetools inspect "$IMAGE:src-$key" >/dev/null 2>&1; then
+            echo "$IMAGE:src-$key exists (crossly-openapi $tag, sources unchanged): nothing to build"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "building crossly-openapi $tag, key $key"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  image:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      version: ${{ steps.meta-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: specs
+        uses: ./.github/actions/prepare-specs
+        with:
+          openapi-tag: ${{ needs.plan.outputs.openapi-tag }}
+          token: ${{ github.token }}
+      - id: meta-version
+        env:
+          TAG: ${{ needs.plan.outputs.openapi-tag }}
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      # 1. amd64 locally, smoke-tested before anything is pushed.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: crossly-mock:candidate
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: smoke the candidate
+        run: |
+          docker run -d --name mock -p 4010:4010 -p 4011:4011 crossly-mock:candidate
+          for i in $(seq 1 150); do
+            curl -fsS localhost:4010/healthz >/dev/null 2>&1 && curl -fsS localhost:4011/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          node scripts/smoke.mjs --seller http://localhost:4010 --buyer http://localhost:4011 --specs specs --sweep
+          docker rm -f mock
+
+      # 2. multi-arch push with BuildKit SBOM + provenance in the image index.
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.meta-version.outputs.version }}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=src-${{ needs.plan.outputs.key }}
+          labels: |
+            org.opencontainers.image.title=crossly-mock
+            org.opencontainers.image.description=Mock Crossly API (seller :4010, buyer :4011) from crossly-openapi ${{ needs.plan.outputs.openapi-tag }}
+            org.opencontainers.image.licenses=MIT
+            net.crossly.openapi.version=${{ needs.plan.outputs.openapi-tag }}
+      - id: push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 3. GitHub attestations stored next to the image: gh attestation verify oci://ghcr.io/crossly-dev/crossly-mock:latest --repo crossly-dev/crossly-mock
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+      - uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          format: spdx-json
+          output-file: crossly-mock.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - uses: actions/attest-sbom@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          sbom-path: crossly-mock.spdx.json
+          push-to-registry: true
+      - uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: |
+            crossly-mock.spdx.json
+            specs/manifest.json
+          retention-days: 30
+
+  verify:
+    needs: image
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v8
+        with:
+          name: sbom
+      - run: npm install --no-audit --no-fund
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: attestations
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ env.IMAGE }}@${{ needs.image.outputs.digest }}
+        run: |
+          gh attestation verify "oci://$REF" --repo "$GITHUB_REPOSITORY" --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml"
+          gh attestation verify "oci://$REF" --repo "$GITHUB_REPOSITORY" --predicate-type https://spdx.dev/Document/v2.3
+      - name: run the pushed image natively
+        env:
+          REF: ${{ env.IMAGE }}@${{ needs.image.outputs.digest }}
+        run: |
+          docker run -d --name mock -p 4010:4010 -p 4011:4011 "$REF"
+          docker inspect -f '{{.Os}}/{{.Architecture}}' "$REF"
+          for i in $(seq 1 150); do
+            curl -fsS localhost:4010/healthz >/dev/null 2>&1 && curl -fsS localhost:4011/healthz >/dev/null 2>&1 && break
+            sleep 2
+          done
+          # The specs inside the image, so the sweep checks exactly what it serves.
+          mkdir -p specs && docker cp mock:/mock/specs/. specs/
+          node scripts/smoke.mjs --seller http://localhost:4010 --buyer http://localhost:4011 --specs specs --sweep
+      - if: always()
+        run: docker logs mock 2>&1 | tail -n 100 || true
+
+  release:
+    needs: [plan, image, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: sbom
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.plan.outputs.openapi-tag }}
+          VERSION: ${{ needs.image.outputs.version }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+          KEY: ${{ needs.plan.outputs.key }}
+        run: |
+          short=${GITHUB_SHA::7}
+          cov=$(jq -r '.apis | to_entries | map("\(.key): \(.value.examples)/\(.value.successResponses) success responses with a validated example (\(.value.curated) curated)") | join("; ")' specs/manifest.json)
+          build="- \`$IMAGE@$DIGEST\` (source \`$short\`, built $(date -u +%Y-%m-%dT%H:%MZ)): tags \`latest\`, \`$VERSION\`, \`sha-$short\`, \`src-$KEY\`"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+            printf '%s\n' "$build" >> notes.md
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+            gh release upload "$TAG" crossly-mock.spdx.json --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            {
+              echo "Mock of the Crossly API built from [crossly-openapi $TAG](https://github.com/crossly-dev/crossly-openapi/releases/tag/$TAG) (see its notes for what changed in the API)."
+              echo
+              echo '```sh'
+              echo "docker run --rm -p 4010:4010 -p 4011:4011 $IMAGE:$VERSION"
+              echo '```'
+              echo
+              echo "Examples: $cov."
+              echo
+              echo "Verify: \`gh attestation verify oci://$IMAGE:$VERSION --repo $GITHUB_REPOSITORY\` (SLSA provenance and the SPDX SBOM attached here are both attested in the registry)."
+              echo
+              echo '### Builds'
+              echo
+              echo "$build"
+            } > notes.md
+            gh release create "$TAG" crossly-mock.spdx.json --repo "$GITHUB_REPOSITORY" --title "crossly-mock $VERSION" --notes-file notes.md --target "$GITHUB_SHA"
+          fi
