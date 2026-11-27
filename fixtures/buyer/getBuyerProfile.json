@@ -1,0 +1,8 @@
+{
+  "data": {
+    "email": "sam.rivera@example.com",
+    "displayName": "Sam Rivera",
+    "shippingAddress": { "name": "Sam Rivera", "line1": "500 Congress Ave", "city": "Austin", "state": "TX", "postalCode": "78701", "country": "US" },
+    "bucksBalanceCents": 1250
+  }
+}

@@ -1,0 +1,4 @@
+*
+!scripts/serve.mjs
+!scripts/healthcheck.mjs
+!specs/

@@ -1,0 +1,57 @@
+# Build the image for linux/amd64, start it, and smoke-test real endpoints: named checks plus a sweep of every GET
+# operation of both APIs (2xx, schema-valid body). Nothing is pushed.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      openapi-tag:
+        description: crossly-openapi release to test against (default latest)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - id: specs
+        uses: ./.github/actions/prepare-specs
+        with:
+          openapi-tag: ${{ inputs.openapi-tag }}
+          token: ${{ github.token }}
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: crossly-mock:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: start
+        run: |
+          docker run -d --name mock -p 4010:4010 -p 4011:4011 crossly-mock:ci
+          for i in $(seq 1 120); do
+            if curl -fsS localhost:4010/healthz >/dev/null 2>&1 && curl -fsS localhost:4011/healthz >/dev/null 2>&1; then
+              echo "ready after $((i * 2))s"; exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' mock)" != "true" ]; then docker logs mock; exit 1; fi
+            sleep 2
+          done
+          docker logs mock; exit 1
+      - name: quickstart curl
+        run: |
+          curl -fsS -H 'Authorization: Bearer crossly_pat_test' localhost:4010/v1/me | tee /dev/stderr | jq -e '.email'
+          curl -fsS -H 'Authorization: Bearer crossly_oat_test' localhost:4011/v1/buyer/profile | jq -e '.data.bucksBalanceCents'
+      - name: smoke
+        run: node scripts/smoke.mjs --seller http://localhost:4010 --buyer http://localhost:4011 --specs specs --sweep
+      - name: container log
+        if: always()
+        run: docker logs mock 2>&1 | tail -n 200 || true

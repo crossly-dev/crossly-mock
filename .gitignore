@@ -1,0 +1,4 @@
+node_modules/
+specs/
+upstream/
+*.spdx.json

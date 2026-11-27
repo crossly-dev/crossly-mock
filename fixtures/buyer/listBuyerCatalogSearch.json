@@ -1,0 +1,8 @@
+{
+  "data": [
+    { "title": "Vintage Levi's 501 Jeans 32x30", "slug": "vintage-levis-501-jeans-32x30", "priceCents": 5800, "currency": "USD", "brand": "Levi's", "condition": "Pre-owned: excellent", "sellerUsername": "vintagevault", "quantityAvailable": 1, "url": "https://crossly.net/l/vintage-levis-501-jeans-32x30", "aiMedia": false, "aiMediaDetected": false },
+    { "title": "Nike Air Max 90 Sneakers, Size 10", "slug": "nike-air-max-90-sneakers-size-10", "priceCents": 9500, "compareAtCents": 13000, "currency": "USD", "brand": "Nike", "condition": "New with tags", "sellerUsername": "sneakerstash", "quantityAvailable": 2, "url": "https://crossly.net/l/nike-air-max-90-sneakers-size-10", "aiMedia": false, "aiMediaDetected": false },
+    { "title": "Coach Leather Crossbody Bag", "slug": "coach-leather-crossbody-bag", "priceCents": 7200, "currency": "USD", "brand": "Coach", "condition": "Pre-owned: good", "sellerUsername": "closetcleanout", "quantityAvailable": 1, "url": "https://crossly.net/l/coach-leather-crossbody-bag", "aiMedia": false, "aiMediaDetected": false }
+  ],
+  "pagination": { "page": 1, "limit": 24, "total": 3, "totalPages": 1 }
+}

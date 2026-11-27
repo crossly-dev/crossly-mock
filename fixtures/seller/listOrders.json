@@ -1,0 +1,8 @@
+{
+  "data": [
+    { "platform": "ebay", "status": "shipped", "sku": "SKU-10042", "quantity": 1, "salePrice": 58, "platformFee": 7.66, "shippingCharged": 0, "carrier": "USPS", "service": "Ground Advantage", "buyerUsername": "denimhunter", "isDisputed": false },
+    { "platform": "poshmark", "status": "awaiting_shipment", "sku": "SKU-10043", "quantity": 1, "salePrice": 95, "platformFee": 19, "shippingCharged": 0, "buyerUsername": "kicksfan22", "isDisputed": false },
+    { "platform": "mercari", "status": "delivered", "sku": "SKU-10044", "quantity": 1, "salePrice": 64, "platformFee": 6.4, "shippingCharged": 8.99, "carrier": "UPS", "buyerUsername": "cozyclosets", "isDisputed": false }
+  ],
+  "pagination": { "page": 1, "limit": 25, "total": 3, "totalPages": 1 }
+}

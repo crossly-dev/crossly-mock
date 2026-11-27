@@ -1,0 +1,46 @@
+name: prepare specs
+description: >
+  Download the seller and buyer specs from a crossly-openapi release, verify their signed build provenance, and
+  prepare them for the mock (normalize, synthesize + validate examples, merge curated fixtures) into specs/.
+inputs:
+  openapi-tag:
+    description: crossly-openapi release tag to build from (default: the latest release)
+    required: false
+    default: ''
+  token:
+    description: Token for gh (read-only use)
+    required: true
+outputs:
+  openapi-tag:
+    description: The crossly-openapi tag the specs came from
+    value: ${{ steps.dl.outputs.tag }}
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: '22'
+    - id: dl
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        WANT: ${{ inputs.openapi-tag }}
+      run: |
+        set -euo pipefail
+        tag="${WANT:-$(gh release view -R crossly-dev/crossly-openapi --json tagName --jq .tagName)}"
+        echo "crossly-openapi $tag"
+        rm -rf upstream && mkdir upstream
+        gh release download "$tag" -R crossly-dev/crossly-openapi -p seller.json -p buyer.json -p SHA256SUMS -D upstream
+        (cd upstream && sha256sum -c SHA256SUMS --ignore-missing)
+        # Refuse specs that were not produced by crossly-openapi's own release workflow.
+        for f in seller.json buyer.json; do
+          gh attestation verify "upstream/$f" --repo crossly-dev/crossly-openapi \
+            --signer-workflow crossly-dev/crossly-openapi/.github/workflows/release.yml
+        done
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+    - shell: bash
+      run: npm install --no-audit --no-fund
+    - shell: bash
+      env:
+        TAG: ${{ steps.dl.outputs.tag }}
+      run: node scripts/prepare-specs.mjs --in upstream --out specs --version "$TAG"

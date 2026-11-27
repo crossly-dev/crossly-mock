@@ -1,0 +1,8 @@
+{
+  "data": [
+    { "defaultTitle": "Vintage Levi's 501 Jeans 32x30", "brand": "Levi's", "sku": "SKU-10042", "status": "active", "quantity": 1, "quantityAvailable": 1, "condition": "Pre-owned: excellent", "size": "32x30", "color": ["Indigo"] },
+    { "defaultTitle": "Nike Air Max 90 Sneakers, Size 10", "brand": "Nike", "sku": "SKU-10043", "status": "active", "quantity": 2, "quantityAvailable": 2, "condition": "New with tags", "size": "10", "color": ["White", "Infrared"] },
+    { "defaultTitle": "Patagonia Better Sweater Fleece Jacket", "brand": "Patagonia", "sku": "SKU-10044", "status": "sold", "quantity": 1, "quantityAvailable": 0, "quantitySold": 1, "condition": "Pre-owned: good", "size": "M", "color": ["Heather Grey"] }
+  ],
+  "pagination": { "page": 1, "limit": 25, "total": 3, "totalPages": 1 }
+}

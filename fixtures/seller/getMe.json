@@ -1,0 +1,8 @@
+{
+  "email": "alex.morgan@example.com",
+  "displayName": "Alex Morgan",
+  "subscriptionTier": "pro",
+  "subscriptionStatus": "active",
+  "patPrefix": "crossly_pat_a1b2",
+  "scopes": ["inventory:read", "inventory:write", "listings:read", "listings:write", "orders:read"]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "crossly-mock",
+  "private": true,
+  "description": "Build and test tooling for the crossly-mock image (the image itself has no npm dependencies).",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "prepare-specs": "node scripts/prepare-specs.mjs --in upstream --out specs",
+    "smoke": "node scripts/smoke.mjs --sweep"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1"
+  }
+}
