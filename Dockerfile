@@ -3,7 +3,7 @@
 # The specs in specs/ are prepared on the CI runner (scripts/prepare-specs.mjs) from a crossly-openapi release whose
 # provenance was verified first, so this build only installs Prism and copies files.
 # Prism 5.16 requires Node >= 24.18.
-FROM node:24-alpine
+FROM node:26-alpine
 
 ARG PRISM_VERSION=5.16.0
 RUN npm install -g "@stoplight/prism-cli@${PRISM_VERSION}" --no-audit --no-fund \
