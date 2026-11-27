@@ -58,7 +58,7 @@ for (const api of wanted) {
   const specPath = join(SPECS, `${api}.json`);
   const started = Date.now();
   cfg.ready = false;
-  const child = spawn('prism', ['mock', '-h', '127.0.0.1', '-p', String(cfg.internal), ...extra, specPath], {
+  const child = spawn('prism', ['mock', '-h', '127.0.0.1', '-p', String(cfg.internal), '--multiprocess', 'false', ...extra, specPath], {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: { ...process.env, NODE_OPTIONS: process.env.NODE_OPTIONS || '--max-old-space-size=4096' },
   });
